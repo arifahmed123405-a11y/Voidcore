@@ -1,0 +1,68 @@
+name: Android foundation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # GitHub's Ubuntu Android runners already expose ANDROID_SDK_ROOT and
+      # sdkmanager. Avoid android-actions/setup-android here: its blanket
+      # `sdkmanager --licenses` currently trips over unrelated Google TV
+      # add-on licenses and can fail before our project is even configured.
+      - name: Install required Android SDK packages
+        shell: bash
+        run: |
+          set -eu
+          echo "ANDROID_SDK_ROOT=${ANDROID_SDK_ROOT:-}"
+
+          SDKMANAGER="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager -perm -111 2>/dev/null | head -n 1)"
+          fi
+
+          if [ -z "${SDKMANAGER:-}" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found" >&2
+            exit 1
+          fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          # `yes` normally exits with SIGPIPE after sdkmanager has consumed
+          # enough input, so do not enable `pipefail` for this step.
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0" >/dev/null
+
+      - name: Build, test and lint
+        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: void-core-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

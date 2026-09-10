@@ -1,0 +1,4 @@
+<resources>
+ <string name="app_name">Void Core</string>
+ <string name="accessibility_service_description">Allows Void Core to understand and interact with visible Android interfaces when you explicitly ask it to.</string>
+</resources>
